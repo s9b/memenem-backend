@@ -312,11 +312,26 @@ async def generate_meme_variations_async(request: JobRequest, background_tasks: 
     try:
         logger.info(f"🎭 Submitting async job: topic='{request.topic}', style='{request.style}', max_templates={request.max_templates}")
         
+        # Convert old format to new format
+        from app.models.schemas import JobRequest as NewJobRequest
+        if hasattr(request, 'max_templates'):
+            # Already new format
+            job_request = request
+        else:
+            # Convert old GenerateMemeRequest to new JobRequest
+            job_request = NewJobRequest(
+                topic=request.topic,
+                style=request.style,
+                max_templates=5,  # Default
+                variations_per_template=4,  # Default
+                template_id=getattr(request, 'template_id', None)
+            )
+        
         # Import async components
         from app.routes.async_meme_routes import submit_meme_generation_job
         
         # Use the optimized async system
-        return await submit_meme_generation_job(request, background_tasks)
+        return await submit_meme_generation_job(job_request, background_tasks)
         
     except Exception as e:
         logger.error(f"Error in optimized generate-variations: {e}")
@@ -422,6 +437,18 @@ async def get_job_status(job_id: str):
     except Exception as e:
         logger.error(f"Error getting job status: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to get job status: {str(e)}")
+
+@router.get("/cache-stats")
+async def get_cache_statistics():
+    """
+    Get cache statistics for monitoring and optimization.
+    """
+    try:
+        from app.routes.async_meme_routes import get_cache_statistics as async_get_cache_stats
+        return await async_get_cache_stats()
+    except Exception as e:
+        logger.error(f"Error getting cache stats: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get cache statistics: {str(e)}")
 
 @router.post("/cache-cleanup")
 async def trigger_cache_cleanup(background_tasks: BackgroundTasks):

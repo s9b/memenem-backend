@@ -27,7 +27,7 @@ class CacheManager:
     
     def _get_database(self):
         """Get database connection lazily."""
-        if not self.db:
+        if self.db is None:
             self.db = database.get_database()
         return self.db
     
