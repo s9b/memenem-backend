@@ -168,6 +168,83 @@ class ErrorResponse(BaseModel):
     error: str
     detail: Optional[str] = None
 
+# Job Management Models for Async Processing
+class JobStatus(BaseModel):
+    """Job status for async meme generation."""
+    job_id: str = Field(..., description="Unique job identifier")
+    status: str = Field(..., description="Job status: queued, processing, completed, failed")
+    progress: float = Field(default=0.0, description="Progress percentage (0-100)")
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    total_templates: Optional[int] = Field(None, description="Total number of templates to process")
+    completed_templates: Optional[int] = Field(None, description="Number of completed templates")
+    error_message: Optional[str] = Field(None, description="Error message if failed")
+
+class JobRequest(BaseModel):
+    """Request model for async meme generation job."""
+    topic: str = Field(..., min_length=1, max_length=200, description="Topic/theme for meme generation")
+    style: str = Field(..., description="Humor style for caption generation")
+    max_templates: int = Field(default=5, ge=1, le=10, description="Maximum number of templates to generate")
+    variations_per_template: int = Field(default=4, ge=1, le=6, description="Number of caption variations per template")
+    template_id: Optional[str] = Field(None, description="Specific template to use (optional)")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "topic": "Monday morning meetings",
+                "style": "sarcastic",
+                "max_templates": 5,
+                "variations_per_template": 4
+            }
+        }
+
+class JobSubmissionResponse(BaseModel):
+    """Response model for job submission."""
+    success: bool
+    job_id: str
+    status: str
+    estimated_completion_time: Optional[int] = Field(None, description="Estimated completion time in seconds")
+    message: Optional[str] = None
+
+class JobResultResponse(BaseModel):
+    """Response model for job results."""
+    success: bool
+    job_id: str
+    status: str
+    progress: float
+    templates: List[MemeTemplate] = Field(default_factory=list, description="Generated meme templates with variations")
+    count: int = Field(default=0, description="Total number of templates returned")
+    error_message: Optional[str] = None
+    completed_at: Optional[datetime] = None
+    processing_time: Optional[float] = Field(None, description="Total processing time in seconds")
+
+class CachedCaption(BaseModel):
+    """Cached caption model for MongoDB storage."""
+    id: Optional[PyObjectId] = Field(default=None, alias="_id")
+    cache_key: str = Field(..., description="Unique cache key for caption")
+    topic: str = Field(..., description="Meme topic")
+    style: str = Field(..., description="Humor style")
+    template_id: str = Field(..., description="Template ID")
+    caption: Optional[str] = Field(None, description="Single caption")
+    captions: Optional[Dict[str, str]] = Field(None, description="Multi-panel captions")
+    virality_score: float = Field(..., description="Virality score")
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    hit_count: int = Field(default=1, description="Number of times this caption was used")
+    
+    class Config:
+        populate_by_name = True
+        arbitrary_types_allowed = True
+        json_encoders = {ObjectId: str}
+
+class BatchProgress(BaseModel):
+    """Progress tracking for batch processing."""
+    batch_id: str
+    total_items: int
+    completed_items: int
+    failed_items: int
+    current_item: Optional[str] = None
+    errors: List[str] = Field(default_factory=list)
+
 # Humor style enum
 HUMOR_STYLES = [
     "sarcastic",
@@ -176,3 +253,12 @@ HUMOR_STYLES = [
     "dark_humor",
     "corporate_irony"
 ]
+
+# Job status constants
+JOB_STATUS = {
+    "QUEUED": "queued",
+    "PROCESSING": "processing", 
+    "COMPLETED": "completed",
+    "FAILED": "failed",
+    "CANCELLED": "cancelled"
+}
