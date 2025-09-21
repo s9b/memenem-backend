@@ -10,9 +10,9 @@ from datetime import datetime
 import uuid
 
 from app.models.schemas import (
-    GenerateMemeRequest, GenerateMemeResponse, TemplatesResponse, TrendingMemesResponse,
+    GenerateMemeRequest, GenerateMemeResponse, GenerateMemesResponse, TemplatesResponse, TrendingMemesResponse,
     UpvoteRequest, UpvoteResponse, ViralityScoreResponse, ErrorResponse,
-    Template, Meme, HUMOR_STYLES
+    Template, Meme, MemeTemplate, MemeVariation, HUMOR_STYLES
 )
 from app.models.database import database
 from app.scrapers.imgflip_scraper import ImgflipScraper
@@ -49,14 +49,18 @@ async def get_trending_templates(limit: int = 50, source: Optional[str] = None):
         
         if source is None or source == "imgflip":
             try:
-                imgflip_templates = await imgflip_scraper.get_trending_templates(limit // 3)
+                # Fetch all available templates if limit is high, otherwise use proportional split
+                imgflip_limit = 0 if limit > 200 else max(50, limit // 2)  # Get more from Imgflip as it's most reliable
+                imgflip_templates = await imgflip_scraper.get_trending_templates(imgflip_limit)
                 all_templates.extend(imgflip_templates)
             except Exception as e:
                 logger.warning(f"Imgflip scraping failed: {e}")
         
         if source is None or source == "reddit":
             try:
-                reddit_templates = await reddit_scraper.get_trending_templates(limit // 3)
+                # Limit Reddit templates to avoid rate limits
+                reddit_limit = min(50, limit // 4) if limit > 20 else limit // 4
+                reddit_templates = await reddit_scraper.get_trending_templates(reddit_limit)
                 all_templates.extend(reddit_templates)
             except Exception as e:
                 logger.warning(f"Reddit scraping failed: {e}")
@@ -116,7 +120,7 @@ async def generate_meme(request: GenerateMemeRequest, background_tasks: Backgrou
             )
         
         # Get available templates from database or scrape new ones
-        templates = await _get_templates_for_topic(request.topic, request.template_id)
+        templates = await _get_templates_for_topic(request.topic, request.template_id, limit=10)
         
         if not templates:
             raise HTTPException(
@@ -222,6 +226,129 @@ async def generate_meme(request: GenerateMemeRequest, background_tasks: Backgrou
     except Exception as e:
         logger.error(f"Error generating meme: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to generate meme: {str(e)}")
+
+@router.post("/generate-variations", response_model=GenerateMemesResponse)
+async def generate_meme_variations(request: GenerateMemeRequest, background_tasks: BackgroundTasks):
+    """
+    Generate multiple meme variations with 4-5 caption options per relevant template.
+    
+    Args:
+        request: Meme generation request with topic, style, and optional template_id
+    """
+    try:
+        logger.info(f"Generating meme variations: topic='{request.topic}', style='{request.style}'")
+        
+        # Validate humor style
+        if request.style not in HUMOR_STYLES:
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Invalid humor style. Must be one of: {HUMOR_STYLES}"
+            )
+        
+        # Get relevant templates (top 10-15 for topic)
+        templates = await _get_templates_for_topic(request.topic, request.template_id, limit=15)
+        
+        if not templates:
+            raise HTTPException(
+                status_code=404,
+                detail="No suitable templates found for the given topic"
+            )
+        
+        # Take top 5 most relevant templates to avoid API rate limits
+        selected_templates = templates[:5]
+        
+        meme_templates = []
+        
+        # Generate variations for each template
+        for template in selected_templates:
+            try:
+                # Generate 4-5 caption variations for this template
+                variations = await caption_generator.generate_caption_variations(
+                    topic=request.topic,
+                    style=request.style,
+                    template_context=template,
+                    count=4
+                )
+                
+                meme_variations = []
+                virality_scores = []
+                
+                # Process each variation
+                for var_data in variations:
+                    # Calculate virality score for this variation
+                    caption_text = var_data.get("caption", "")
+                    if not caption_text and var_data.get("captions"):
+                        # For multi-panel, combine all captions for scoring
+                        caption_text = " / ".join(var_data["captions"].values())
+                    
+                    virality_features = {
+                        "template_popularity": template.get("popularity", 75),
+                        "caption": caption_text,
+                        "style": request.style,
+                        "topic": request.topic,
+                        "template_tags": template.get("tags", [])
+                    }
+                    
+                    virality_result = virality_predictor.predict_virality(virality_features)
+                    virality_score = virality_result.get("virality_score", 50.0)
+                    virality_scores.append(virality_score)
+                    
+                    # Create variation object
+                    variation = MemeVariation(
+                        variation_id=var_data.get("variation_id", 1),
+                        caption=var_data.get("caption"),
+                        captions=var_data.get("captions"),
+                        virality_score=virality_score,
+                        metadata=var_data.get("metadata", {})
+                    )
+                    meme_variations.append(variation)
+                
+                # Calculate average virality score
+                avg_virality = sum(virality_scores) / len(virality_scores) if virality_scores else 50.0
+                
+                # Create template object with variations
+                meme_template = MemeTemplate(
+                    template_id=template["template_id"],
+                    template_name=template["name"],
+                    image_url=template["url"],
+                    panel_count=template.get("panel_count", 1),
+                    characters=template.get("characters", []),
+                    variations=meme_variations,
+                    average_virality_score=avg_virality
+                )
+                
+                meme_templates.append(meme_template)
+                
+            except Exception as e:
+                logger.warning(f"Failed to generate variations for template {template.get('name')}: {e}")
+                continue
+        
+        if not meme_templates:
+            raise HTTPException(
+                status_code=500,
+                detail="Failed to generate meme variations for any templates"
+            )
+        
+        # Sort by average virality score
+        meme_templates.sort(key=lambda x: x.average_virality_score, reverse=True)
+        
+        # Schedule cleanup
+        background_tasks.add_task(meme_generator.cleanup_old_memes)
+        
+        logger.info(f"Successfully generated {len(meme_templates)} templates with variations")
+        
+        return GenerateMemesResponse(
+            success=True,
+            templates=meme_templates,
+            count=len(meme_templates),
+            message=f"Generated {len(meme_templates)} meme templates with multiple variations"
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error generating meme variations: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to generate meme variations: {str(e)}")
 
 @router.get("/trending", response_model=TrendingMemesResponse)
 async def get_trending_memes(limit: int = 20, sort_by: str = "virality_score"):
@@ -412,7 +539,7 @@ async def _store_meme_in_db(meme_doc: dict):
     except Exception as e:
         logger.warning(f"Failed to store meme in database: {e}")
 
-async def _get_templates_for_topic(topic: str, preferred_template_id: Optional[str] = None) -> List[dict]:
+async def _get_templates_for_topic(topic: str, preferred_template_id: Optional[str] = None, limit: int = 50) -> List[dict]:
     """Get templates suitable for the given topic."""
     try:
         db = database.get_database()
@@ -426,8 +553,8 @@ async def _get_templates_for_topic(topic: str, preferred_template_id: Optional[s
                 return [template_doc]
         
         # Otherwise, get all templates and let the caption generator suggest best ones
-        cursor = templates_collection.find({}).sort("popularity", -1).limit(50)
-        template_docs = await cursor.to_list(length=50)
+        cursor = templates_collection.find({}).sort("popularity", -1).limit(limit * 2)  # Get more for better selection
+        template_docs = await cursor.to_list(length=limit * 2)
         
         # Remove MongoDB _id field
         templates = []

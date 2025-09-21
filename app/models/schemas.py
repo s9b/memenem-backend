@@ -85,6 +85,24 @@ class Meme(MemeBase):
     upvotes: int
     timestamp: datetime
 
+class MemeVariation(BaseModel):
+    """Single meme variation with caption(s) and metadata."""
+    variation_id: int = Field(..., description="Variation identifier")
+    caption: Optional[str] = Field(None, description="Single caption for simple templates")
+    captions: Optional[Dict[str, str]] = Field(None, description="Multiple captions for multi-panel templates")
+    virality_score: float = Field(..., description="Predicted virality score for this variation")
+    metadata: Dict[str, Any] = Field(default_factory=dict, description="Generation metadata")
+
+class MemeTemplate(BaseModel):
+    """Enhanced meme template with generation results."""
+    template_id: str
+    template_name: str
+    image_url: str
+    panel_count: int = Field(default=1, description="Number of panels/sections in template")
+    characters: List[str] = Field(default_factory=list, description="Characters/subjects in template")
+    variations: List[MemeVariation] = Field(..., description="Generated caption variations")
+    average_virality_score: float = Field(..., description="Average virality score across variations")
+
 # Request Models
 class GenerateMemeRequest(BaseModel):
     """Request model for meme generation."""
@@ -110,6 +128,13 @@ class GenerateMemeResponse(BaseModel):
     """Response model for meme generation."""
     success: bool
     meme: Meme
+    message: Optional[str] = None
+
+class GenerateMemesResponse(BaseModel):
+    """Response model for multi-variation meme generation."""
+    success: bool
+    templates: List[MemeTemplate] = Field(..., description="Generated meme templates with variations")
+    count: int = Field(..., description="Total number of templates returned")
     message: Optional[str] = None
 
 class TemplatesResponse(BaseModel):

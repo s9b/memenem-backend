@@ -22,16 +22,16 @@ class ImgflipScraper:
         Fetch trending meme templates from Imgflip API.
         
         Args:
-            limit: Maximum number of templates to fetch
+            limit: Maximum number of templates to fetch (0 for all available)
             
         Returns:
             List of template data dictionaries
         """
         try:
-            logger.info("Fetching trending templates from Imgflip API")
+            logger.info("Fetching templates from Imgflip API")
             
             async with httpx.AsyncClient() as client:
-                # Get popular templates
+                # Get all available templates
                 response = await client.get(f"{self.base_url}/get_memes")
                 
                 if response.status_code != 200:
@@ -47,7 +47,11 @@ class ImgflipScraper:
                 memes = data.get("data", {}).get("memes", [])
                 templates = []
                 
-                for meme in memes[:limit]:
+                # Process all templates or up to limit
+                memes_to_process = memes if limit == 0 else memes[:limit]
+                
+                for i, meme in enumerate(memes_to_process):
+                    meme["_position"] = i  # Add position for popularity calculation
                     template_data = await self._process_template(meme)
                     if template_data:
                         templates.append(template_data)
@@ -82,8 +86,10 @@ class ImgflipScraper:
                 logger.warning(f"Incomplete template data: {meme_data}")
                 return None
             
-            # Generate tags based on template name
+            # Generate tags and detect characters/panels
             tags = await self._generate_tags(name)
+            characters = await self._detect_characters(name)
+            panel_info = await self._analyze_panel_structure(name, box_count)
             
             # Calculate popularity based on position in trending list
             # Templates appearing earlier are considered more popular
@@ -98,8 +104,13 @@ class ImgflipScraper:
                 "popularity": popularity,
                 "source": "imgflip",
                 "box_count": box_count,
+                "panel_count": panel_info["panel_count"],
+                "characters": characters,
+                "panel_layout": panel_info["layout"],
                 "width": width,
-                "height": height
+                "height": height,
+                "created_at": None,
+                "updated_at": None
             }
             
             return template_data
@@ -153,6 +164,105 @@ class ImgflipScraper:
         
         # Remove duplicates and return
         return list(set(tags))
+    
+    async def _detect_characters(self, template_name: str) -> List[str]:
+        """
+        Detect characters/subjects in a meme template based on its name.
+        
+        Args:
+            template_name: Name of the template
+            
+        Returns:
+            List of character names or descriptions
+        """
+        name_lower = template_name.lower()
+        characters = []
+        
+        # Character detection patterns
+        character_patterns = {
+            "batman": ["Batman", "Robin"],
+            "drake": ["Drake"],
+            "distracted boyfriend": ["Boyfriend", "Girlfriend", "Other Woman"],
+            "disaster girl": ["Girl"],
+            "success kid": ["Kid"],
+            "grumpy cat": ["Grumpy Cat"],
+            "doge": ["Doge"],
+            "woman yelling": ["Woman", "Cat"],
+            "expanding brain": ["Person"],
+            "bernie": ["Bernie Sanders"],
+            "change my mind": ["Steven Crowder"],
+            "leonardo dicaprio": ["Leonardo DiCaprio"],
+            "morpheus": ["Morpheus"],
+            "ancient aliens": ["Giorgio Tsoukalos"],
+            "picard": ["Captain Picard"],
+            "gru": ["Gru"],
+            "two buttons": ["Person"],
+            "running away balloon": ["Person"],
+            "epic handshake": ["Person 1", "Person 2"],
+            "anakin padme": ["Anakin", "Padme"],
+            "waiting skeleton": ["Skeleton"],
+            "pablo escobar": ["Pablo Escobar"]
+        }
+        
+        # Detect characters based on name
+        for pattern, chars in character_patterns.items():
+            if pattern in name_lower:
+                characters.extend(chars)
+                break
+        
+        # Fallback: generic character detection
+        if not characters:
+            if any(word in name_lower for word in ["guy", "man", "person"]):
+                characters = ["Person"]
+            elif any(word in name_lower for word in ["woman", "girl"]):
+                characters = ["Woman"]
+            elif any(word in name_lower for word in ["cat", "dog", "animal"]):
+                characters = ["Animal"]
+            else:
+                characters = ["Character"]
+        
+        return characters
+    
+    async def _analyze_panel_structure(self, template_name: str, box_count: int) -> Dict[str, Any]:
+        """
+        Analyze the panel structure of a meme template.
+        
+        Args:
+            template_name: Name of the template
+            box_count: Number of text boxes in the template
+            
+        Returns:
+            Dictionary with panel information
+        """
+        name_lower = template_name.lower()
+        
+        # Multi-panel templates
+        multi_panel_patterns = {
+            "batman slapping robin": {"panel_count": 2, "layout": "side_by_side"},
+            "drake hotline bling": {"panel_count": 2, "layout": "vertical"},
+            "distracted boyfriend": {"panel_count": 1, "layout": "single"},
+            "two buttons": {"panel_count": 3, "layout": "mixed"},
+            "expanding brain": {"panel_count": 4, "layout": "vertical"},
+            "gru's plan": {"panel_count": 4, "layout": "grid"},
+            "anakin padme": {"panel_count": 4, "layout": "grid"},
+            "running away balloon": {"panel_count": 5, "layout": "mixed"},
+            "epic handshake": {"panel_count": 3, "layout": "mixed"}
+        }
+        
+        # Check for known multi-panel templates
+        for pattern, info in multi_panel_patterns.items():
+            if pattern in name_lower:
+                return info
+        
+        # Fallback based on box_count
+        if box_count <= 1:
+            return {"panel_count": 1, "layout": "single"}
+        elif box_count == 2:
+            return {"panel_count": 2, "layout": "vertical"}
+        elif box_count >= 3:
+            return {"panel_count": box_count, "layout": "mixed"}
+        else:
+            return {"panel_count": 1, "layout": "single"}
     
     async def search_templates(self, query: str, limit: int = 20) -> List[Dict[str, Any]]:
         """

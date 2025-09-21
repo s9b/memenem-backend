@@ -382,3 +382,266 @@ Generate only the meme caption text, keep it under 2 lines, make it punchy and r
         except Exception as e:
             logger.error(f"Error suggesting templates: {e}")
             return available_templates[:10]  # Fallback to first 10 templates
+    
+    async def generate_caption_variations(self, topic: str, style: str, template_context: Optional[Dict] = None, count: int = 4) -> List[Dict[str, Any]]:
+        """
+        Generate multiple caption variations for the same topic and style.
+        
+        Args:
+            topic: The topic/theme for the meme
+            style: Humor style
+            template_context: Optional template information
+            count: Number of variations to generate
+            
+        Returns:
+            List of caption variations with metadata
+        """
+        try:
+            logger.info(f"Generating {count} caption variations for topic: {topic}")
+            
+            variations = []
+            
+            # Handle multi-panel templates
+            if template_context and template_context.get("panel_count", 1) > 1:
+                variations = await self._generate_multi_panel_variations(topic, style, template_context, count)
+            else:
+                # Generate single-panel variations
+                for i in range(count):
+                    variation = await self.generate_caption(topic, style, template_context)
+                    if variation["success"]:
+                        variations.append({
+                            "caption": variation["caption"],
+                            "metadata": variation["metadata"],
+                            "variation_id": i + 1
+                        })
+            
+            # Ensure we have at least some variations
+            if not variations:
+                fallback = await self.generate_caption(topic, style, template_context)
+                variations.append({
+                    "caption": fallback["caption"],
+                    "metadata": fallback["metadata"],
+                    "variation_id": 1
+                })
+            
+            logger.info(f"Successfully generated {len(variations)} caption variations")
+            return variations
+            
+        except Exception as e:
+            logger.error(f"Error generating caption variations: {e}")
+            # Fallback to single caption
+            fallback = await self.generate_caption(topic, style, template_context)
+            return [{
+                "caption": fallback["caption"],
+                "metadata": fallback.get("metadata", {}),
+                "variation_id": 1
+            }]
+    
+    async def _generate_multi_panel_variations(self, topic: str, style: str, template_context: Dict, count: int) -> List[Dict[str, Any]]:
+        """
+        Generate caption variations for multi-panel memes.
+        
+        Args:
+            topic: The meme topic
+            style: Humor style
+            template_context: Template information including panel structure
+            count: Number of variations to generate
+            
+        Returns:
+            List of multi-panel caption variations
+        """
+        try:
+            panel_count = template_context.get("panel_count", 2)
+            characters = template_context.get("characters", [])
+            template_name = template_context.get("name", "").lower()
+            
+            variations = []
+            
+            for i in range(count):
+                if "batman" in template_name:
+                    caption_data = await self._generate_batman_robin_captions(topic, style)
+                elif "drake" in template_name:
+                    caption_data = await self._generate_drake_captions(topic, style)
+                elif "distracted" in template_name:
+                    caption_data = await self._generate_distracted_boyfriend_captions(topic, style)
+                elif panel_count == 2:
+                    caption_data = await self._generate_two_panel_captions(topic, style, characters)
+                else:
+                    caption_data = await self._generate_generic_multi_panel_captions(topic, style, panel_count, characters)
+                
+                variations.append({
+                    "captions": caption_data["captions"],
+                    "metadata": {
+                        "style": style,
+                        "topic": topic,
+                        "panel_count": panel_count,
+                        "characters": characters,
+                        "method": "multi_panel"
+                    },
+                    "variation_id": i + 1
+                })
+            
+            return variations
+            
+        except Exception as e:
+            logger.error(f"Error generating multi-panel variations: {e}")
+            return []
+    
+    async def _generate_batman_robin_captions(self, topic: str, style: str) -> Dict[str, Any]:
+        """Generate captions for Batman slapping Robin meme."""
+        try:
+            if self.gemini_model:
+                prompt = f"""Generate a Batman slapping Robin meme for the topic '{topic}' in {style} style.
+                
+Format as:
+Panel 1 (Robin speaking): [Robin's text]
+Panel 2 (Batman slapping): [Batman's reaction text]
+
+Make it funny and relevant to {topic}:"""
+                
+                response = self.gemini_model.generate_content(prompt)
+                if response.text:
+                    # Parse the response
+                    lines = response.text.strip().split('\n')
+                    panel_1 = "Me trying to justify something"
+                    panel_2 = "My brain: Stop that"
+                    
+                    for line in lines:
+                        if "panel 1" in line.lower() or "robin" in line.lower():
+                            panel_1 = line.split(":", 1)[1].strip() if ":" in line else line.strip()
+                        elif "panel 2" in line.lower() or "batman" in line.lower():
+                            panel_2 = line.split(":", 1)[1].strip() if ":" in line else line.strip()
+                    
+                    return {
+                        "captions": {
+                            "panel_1": self._clean_caption(panel_1),
+                            "panel_2": self._clean_caption(panel_2)
+                        }
+                    }
+            
+            # Fallback templates
+            templates = {
+                "sarcastic": [
+                    {"panel_1": f"Maybe {topic} isn't so bad", "panel_2": "What are you thinking?"},
+                    {"panel_1": f"I should embrace {topic}", "panel_2": "Reality check time"},
+                ],
+                "gen_z_slang": [
+                    {"panel_1": f"{topic} is kinda fire ngl", "panel_2": "Bestie, no."},
+                    {"panel_1": f"Maybe {topic} slaps different", "panel_2": "This ain't it chief"},
+                ],
+                "wholesome": [
+                    {"panel_1": f"I love {topic} so much!", "panel_2": "Share the love responsibly"},
+                    {"panel_1": f"{topic} makes everything better", "panel_2": "Don't forget other good things"},
+                ]
+            }
+            
+            style_templates = templates.get(style, templates["sarcastic"])
+            selected = random.choice(style_templates)
+            
+            return {"captions": selected}
+            
+        except Exception as e:
+            logger.error(f"Error generating Batman Robin captions: {e}")
+            return {
+                "captions": {
+                    "panel_1": f"Me thinking about {topic}",
+                    "panel_2": "My brain: Focus!"
+                }
+            }
+    
+    async def _generate_drake_captions(self, topic: str, style: str) -> Dict[str, Any]:
+        """Generate captions for Drake pointing meme."""
+        try:
+            # Drake meme: first panel (pointing away), second panel (pointing at/approving)
+            templates = {
+                "sarcastic": [
+                    {"panel_1": f"Dealing with {topic} properly", "panel_2": f"Ignoring {topic} completely"},
+                    {"panel_1": f"Being responsible about {topic}", "panel_2": f"Pretending {topic} doesn't exist"},
+                ],
+                "gen_z_slang": [
+                    {"panel_1": f"{topic} but make it boring", "panel_2": f"{topic} but make it chaos"},
+                    {"panel_1": f"Basic {topic}", "panel_2": f"{topic} with extra sauce"},
+                ],
+                "wholesome": [
+                    {"panel_1": f"Being sad about {topic}", "panel_2": f"Finding joy in {topic}"},
+                    {"panel_1": f"Worrying about {topic}", "panel_2": f"Embracing {topic} positively"},
+                ]
+            }
+            
+            style_templates = templates.get(style, templates["sarcastic"])
+            selected = random.choice(style_templates)
+            
+            return {"captions": selected}
+            
+        except Exception as e:
+            logger.error(f"Error generating Drake captions: {e}")
+            return {
+                "captions": {
+                    "panel_1": f"Old way of handling {topic}",
+                    "panel_2": f"New way of handling {topic}"
+                }
+            }
+    
+    async def _generate_distracted_boyfriend_captions(self, topic: str, style: str) -> Dict[str, Any]:
+        """Generate captions for Distracted Boyfriend meme."""
+        # This is typically a single caption meme with context
+        caption = await self.generate_caption(f"being distracted by {topic}", style)
+        return {
+            "captions": {
+                "single": caption["caption"]
+            }
+        }
+    
+    async def _generate_two_panel_captions(self, topic: str, style: str, characters: List[str]) -> Dict[str, Any]:
+        """Generate generic two-panel captions."""
+        try:
+            # Generic two-panel structure
+            templates = {
+                "sarcastic": [
+                    {"panel_1": f"Before {topic}", "panel_2": f"After {topic} (dead inside)"},
+                    {"panel_1": f"Me: I can handle {topic}", "panel_2": f"Also me: *internal screaming*"},
+                ],
+                "gen_z_slang": [
+                    {"panel_1": f"POV: {topic} approaching", "panel_2": "Me: this is fine 🔥"},
+                    {"panel_1": f"{topic} really said", "panel_2": "'I'm about to end this whole vibe'"},
+                ]
+            }
+            
+            style_templates = templates.get(style, templates["sarcastic"])
+            selected = random.choice(style_templates)
+            
+            return {"captions": selected}
+            
+        except Exception as e:
+            logger.error(f"Error generating two-panel captions: {e}")
+            return {
+                "captions": {
+                    "panel_1": f"Before {topic}",
+                    "panel_2": f"After {topic}"
+                }
+            }
+    
+    async def _generate_generic_multi_panel_captions(self, topic: str, style: str, panel_count: int, characters: List[str]) -> Dict[str, Any]:
+        """Generate captions for templates with more than 2 panels."""
+        try:
+            captions = {}
+            
+            for i in range(panel_count):
+                panel_key = f"panel_{i + 1}"
+                if i == 0:
+                    captions[panel_key] = f"First thought about {topic}"
+                elif i == panel_count - 1:
+                    captions[panel_key] = f"Final realization about {topic}"
+                else:
+                    captions[panel_key] = f"Thinking more about {topic}"
+            
+            return {"captions": captions}
+            
+        except Exception as e:
+            logger.error(f"Error generating generic multi-panel captions: {e}")
+            return {
+                "captions": {
+                    "panel_1": f"About {topic}",
+                    "panel_2": "My thoughts"
+                }
+            }
