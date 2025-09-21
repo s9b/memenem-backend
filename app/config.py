@@ -107,9 +107,16 @@ class Config:
     @property
     def backend_url(self) -> str:
         # Use localhost for development, production URL for deployment
-        if self.debug:
-            return os.getenv('BACKEND_URL', 'http://localhost:8000')
-        return os.getenv('BACKEND_URL', 'https://memenem-backend.onrender.com')
+        # Check for production environment indicators
+        is_production = (
+            os.getenv('RENDER') or  # Render.com sets this
+            os.getenv('NODE_ENV') == 'production' or
+            not self.debug
+        )
+        
+        if is_production:
+            return os.getenv('BACKEND_URL', 'https://memenem-backend.onrender.com')
+        return os.getenv('BACKEND_URL', 'http://localhost:8000')
 
 # Global configuration instance
 config = Config()
