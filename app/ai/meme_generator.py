@@ -437,9 +437,8 @@ class MemeGenerator:
         Returns:
             URL string for accessing the meme
         """
-        # In production, this would be a proper URL to serve static files
-        # For now, return a relative path that can be served by FastAPI
-        return f"/generated_memes/{filename}"
+        # Return full backend URL for cross-origin access
+        return f"{config.backend_url}/generated_memes/{filename}"
     
     def cleanup_old_memes(self, days_old: int = 7):
         """

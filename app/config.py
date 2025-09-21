@@ -103,6 +103,13 @@ class Config:
     @property
     def log_level(self) -> str:
         return os.getenv('LOG_LEVEL', 'INFO')
+    
+    @property
+    def backend_url(self) -> str:
+        # Use localhost for development, production URL for deployment
+        if self.debug:
+            return os.getenv('BACKEND_URL', 'http://localhost:8000')
+        return os.getenv('BACKEND_URL', 'https://memenem-backend.onrender.com')
 
 # Global configuration instance
 config = Config()
