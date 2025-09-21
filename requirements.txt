@@ -1,0 +1,44 @@
+# FastAPI and web framework dependencies
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+gunicorn==21.2.0
+python-multipart==0.0.6
+
+# Database
+pymongo==4.6.0
+motor==3.3.2
+
+# Environment and configuration
+python-dotenv==1.0.0
+
+# AI and ML dependencies
+transformers==4.36.2
+torch==2.1.2
+keybert==0.8.4
+scikit-learn==1.3.2
+xgboost==2.0.3
+numpy==1.24.4
+pandas==2.1.4
+
+# Image processing
+Pillow==10.1.0
+requests==2.31.0
+
+# Web scraping
+praw==7.7.1
+beautifulsoup4==4.12.2
+selenium==4.16.0
+
+# Google Gemini API (free tier)
+google-generativeai==0.3.2
+
+# OpenAI API (optional)
+openai==1.6.1
+
+# Logging and utilities
+loguru==0.7.2
+httpx==0.25.2
+
+# Testing (optional)
+pytest==7.4.3
+pytest-asyncio==0.21.1

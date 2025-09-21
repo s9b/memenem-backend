@@ -1,0 +1,88 @@
+# Render.com deployment configuration for MemeNem Backend
+# This file configures the free tier deployment on Render
+
+services:
+  # Backend API Service
+  - type: web
+    name: memenem-backend
+    env: python
+    plan: free
+    buildCommand: |
+      echo "🚀 Building MemeNem Backend..."
+      pip install --upgrade pip
+      pip install -r requirements.txt
+    startCommand: |
+      echo "🎯 Starting MemeNem Backend on Render..."
+      gunicorn main:app --bind 0.0.0.0:$PORT --workers 2 --worker-class uvicorn.workers.UvicornWorker --timeout 120 --keep-alive 5 --max-requests 1000 --max-requests-jitter 100 --log-level info
+    
+    # Environment variables (to be set in Render dashboard)
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.11.7"
+      - key: PYTHONPATH
+        value: "/opt/render/project/src"
+      - key: DEBUG
+        value: "False"
+      - key: LOG_LEVEL
+        value: "INFO"
+      - key: APP_HOST
+        value: "0.0.0.0"
+      - key: APP_PORT
+        sync: false
+        # Port is automatically set by Render
+      - key: GENERATED_MEMES_PATH
+        value: "./generated_memes"
+      
+      # Database Configuration (set these in Render dashboard)
+      - key: MONGODB_URI
+        sync: false
+        # Example: mongodb+srv://user:password@cluster.mongodb.net/memenem
+      
+      # API Keys (set these securely in Render dashboard)
+      - key: GEMINI_API_KEY
+        sync: false
+        # Get from Google AI Studio (free tier)
+      
+      - key: REDDIT_CLIENT_ID
+        sync: false
+        # Get from Reddit API
+      - key: REDDIT_CLIENT_SECRET
+        sync: false
+        # Get from Reddit API  
+      - key: REDDIT_USER_AGENT
+        sync: false
+        # Format: AppName:v1.0.0 (by /u/yourusername)
+      
+      - key: IMGFLIP_API_USERNAME
+        sync: false
+        # Optional: Imgflip account username
+      - key: IMGFLIP_API_PASSWORD
+        sync: false
+        # Optional: Imgflip account password
+    
+    # Health check configuration
+    healthCheckPath: /health
+    
+    # Auto-deploy from main branch
+    autoDeploy: true
+    
+    # Disk storage for generated memes (free tier: 1GB)
+    disk:
+      name: memenem-storage
+      mountPath: /opt/render/project/src/generated_memes
+      sizeGB: 1
+
+# Additional configuration for free tier optimization
+buildFilter:
+  paths:
+  - app/**
+  - main.py
+  - requirements.txt
+  - Dockerfile
+  - render.yaml
+  ignoredPaths:
+  - "**/.git/**"
+  - "**/node_modules/**"
+  - "**/__pycache__/**"
+  - "**/logs/**"
+  - "**/.venv/**"
