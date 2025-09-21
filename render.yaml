@@ -11,9 +11,7 @@ services:
       echo "🚀 Building MemeNem Backend..."
       pip install --upgrade pip
       pip install -r requirements.txt
-    startCommand: |
-      echo "🎯 Starting MemeNem Backend on Render..."
-      gunicorn main:app --bind 0.0.0.0:$PORT --workers 2 --worker-class uvicorn.workers.UvicornWorker --timeout 120 --keep-alive 5 --max-requests 1000 --max-requests-jitter 100 --log-level info
+    startCommand: ./start.sh
     
     # Environment variables (to be set in Render dashboard)
     envVars:
